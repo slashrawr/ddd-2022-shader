@@ -1,6 +1,6 @@
 #define MAX_STEPS 250
-#define MAX_DIST 100.
-#define SURF_DIST .001
+#define MAX_DIST 90.
+#define SURF_DIST .00001
 #define POINT_LIGHTS 2  
 #define AA 1.
 #define MOUSE 0
@@ -72,41 +72,64 @@ float theO(vec3 point)
 
 float theFloor(vec3 point) 
 { 
-    float x = floor(point.x/5.);
-    float z = floor(point.z/5.);
-    //float bump = sin(x*iTime/2.3)*sin(z*iTime/7.) <-- this works
-    float bump = sin(x*iTime/2.)*sin(z*iTime/5.)-cos(x*z*iTime*.4);
-    
-    //vec3(sin(point.x*2.))+vec3(sin(point.z*2.))
-    return point.y+6.0-clamp(bump,.0,1.);//+sin(p.z-(2.0*iTime));;
+    float split = 5.;
+    float x = floor(point.x/split);
+    float z = floor(point.z/split);
+    float bump = sin(x*iTime/2.)*sin(z*iTime/5.)+sin(x*z*iTime/4.);
+
+    return point.y+6.0-clamp(bump,.6,1.);
 }
 
-vec3 calcFloorColor(vec3 point)
+vec3 calcFloorColour(vec3 point)
 {
-    float x = floor(point.x/5.);
-    float z = floor(point.z/5.);
+    float split = 5.;
+    float x = floor(point.x/split);
+    float z = floor(point.z/split);
     
-    float bump = sin(x*iTime/2.)*sin(z*iTime/5.)-cos(x*z*iTime*.4);
-    //vec3 colour = vec3(sin(point.x*2.))+vec3(sin(point.z*2.));
-    vec3 colour = vec3(clamp(bump,.1,1.));
+    float bump = sin(x*iTime/2.)*sin(z*iTime/5.)+sin(x*z*iTime/4.);
+    vec3 colour = vec3(clamp(bump,.0,1.));
+    //colour += (sin(point.z/split)/sin(point.x/split))/(atan(iTime/.2));
     return colour;
 }
 
-vec2 GetDist(vec3 p) {
+float theBackground(vec3 point)
+{
+    float backWall = length(point.z-35.);
+    float leftWall = point.x+35.;
+    
+    float x = floor(point.x/5.);
+    float y = floor(point.y/5.);
+    
+    float bump = sin(x*iTime/2.)*sin(y*iTime/5.)-cos(x*y*iTime*.4);
+    //backWall -= clamp(bump,.1,1.);
+    
+    return min(backWall, leftWall);
+}
 
-    vec3 point = p;
+vec3 calcBackgroundColour(vec3 point)
+{
+    float a = sin(point.y/2.)+sin((point.x/10.)-iTime);
+    float b = sin(point.y/.2)+sin((point.z/10.)-iTime);
+    
+    return vec3((a+b));
+}
+
+vec2 getDist(vec3 point) 
+{
     vec2 ret = vec2(0,-1);
     
-    float plane = theFloor(p);
-    //float plane2 = p.y-140.0;
+    float plane = theFloor(point);
    
-    float d1 = theD(p+vec3(-2,-1,0));
-    float d2 = theD(p+vec3(0,-1,.1));
-    float d3 = theD(p+vec3(2,-1,.2));
+    float d1 = theD(point+vec3(-2,-1,0));
+    float d2 = theD(point+vec3(0,-1,.1));
+    float d3 = theD(point+vec3(2,-1,.2));
     
-    float o = theO(p);
+    float o = theO(point);
     
-    float d = min(plane,min(o, min(d1, min(d2, d3))));
+    float background = theBackground(point);
+    
+    //float d = min(plane, min(o, min(d1, min(d2, d3))));
+    float d = min(background, min(plane, min(o, min(d1, min(d2, d3)))));
     
     if (d == plane)
         ret = vec2(d, 0);
@@ -118,6 +141,8 @@ vec2 GetDist(vec3 p) {
         ret = vec2(d, 3);
     else if (d == o)
         ret = vec2(d, 4);
+    else if (d == background)
+        ret = vec2(d, 5);
     else
         ret = vec2(d, -1);
     
@@ -131,7 +156,7 @@ vec2 rayMarch(vec3 ro, vec3 rd) {
     for(int i=0; i<MAX_STEPS; i++) 
     {
     	vec3 p = ro + rd*dO;
-        vec2 dS = GetDist(p);
+        vec2 dS = getDist(p);
         dO += dS.x;
         ret = dS;
         if(dO>MAX_DIST || dS.x<SURF_DIST) 
@@ -141,16 +166,14 @@ vec2 rayMarch(vec3 ro, vec3 rd) {
     return ret;
 }
 
-vec3 getNormal(vec3 p) {
-	vec2 d = GetDist(p);
-    vec2 e = vec2(.001, 0);
+vec3 getNormal(vec3 point) {
+	vec2 dist = getDist(point);
+    vec2 epsilon = vec2(.001, 0);
     
-    vec3 n = d.x - vec3(
-        GetDist(p-e.xyy).x,
-        GetDist(p-e.yxy).x,
-        GetDist(p-e.yyx).x);
-    
-    return normalize(n);
+    return normalize(dist.x - vec3(
+        getDist(point-epsilon.xyy).x,
+        getDist(point-epsilon.yxy).x,
+        getDist(point-epsilon.yyx).x));
 }
 
 
@@ -162,7 +185,7 @@ vec3 getColor(int id, vec3 point)
     switch (id)
     {
         //plane
-        case 0: col = calcFloorColor(point);
+        case 0: col = calcFloorColour(point);
                 break;
         //d1
         case 3: col = vec3(.9);
@@ -175,6 +198,9 @@ vec3 getColor(int id, vec3 point)
                 break;
         //circle
         case 4: col = vec3(1);
+                break;
+        //background
+        case 5: col = calcBackgroundColour(point);
                 break;
     }
     
@@ -232,18 +258,20 @@ void setupLights()
 { 
     material.shininess = 64.;
     vec3 lightStartingPos = vec3(0,1,0);
-    float linearFalloff = .1;
+    float linearFalloff = .01;
     float quadraticFalloff = .0095;
+    float lightOrbit = 18.;
 
     dirLight.direction = vec3(.5,.25,-.1);
     dirLight.ambient = vec3(.2,.2,.2);
     dirLight.diffuse = vec3(.2,.2,.2);
     dirLight.specular = vec3(.1,.1,.1);
     
+    //Blue light
     PointLight light1;
     light1.position = lightStartingPos;
-    light1.position.x += sin(iTime/LIGHT_ROTATION_SPEED) * 15.;
-    light1.position.z += cos(iTime/LIGHT_ROTATION_SPEED) * 15.;
+    light1.position.x += sin(iTime/LIGHT_ROTATION_SPEED) * lightOrbit;
+    light1.position.z += cos(iTime/LIGHT_ROTATION_SPEED) * lightOrbit;
     light1.constant = .01;
     light1.linear = linearFalloff;
     light1.quadratic = quadraticFalloff;
@@ -251,10 +279,11 @@ void setupLights()
     light1.diffuse = vec3(.1, .7, .95);
     light1.specular = vec3(.1, .7, .95);
     
+    //Pink light
     PointLight light2;
     light2.position = lightStartingPos;
-    light2.position.x -= sin(iTime/LIGHT_ROTATION_SPEED) * 15.;
-    light2.position.z -= cos(iTime/LIGHT_ROTATION_SPEED) * 15.;
+    light2.position.x -= sin(iTime/LIGHT_ROTATION_SPEED) * lightOrbit;
+    light2.position.z -= cos(iTime/LIGHT_ROTATION_SPEED) * lightOrbit;
     light2.constant = .01;
     light2.linear = linearFalloff;
     light2.quadratic = quadraticFalloff;
@@ -279,16 +308,18 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
             
             vec2 mouse = iMouse.xy/iResolution.xy;
 
-            vec3 rayOrigin = vec3(0, 1, -25);
+            vec3 rayOrigin = vec3(0, 4, -30);
+            vec3 lookAt = vec3(0,1,0);
+            
             if (MOUSE == 1)
             {
-                rayOrigin.yz *= rotate(-mouse.y*3.14);
-                rayOrigin.xz *= rotate(-mouse.x*6.2831);
+                rayOrigin.yz *= rotate(-mouse.y*7.);
+                rayOrigin.xz *= rotate(-mouse.x*14.);
             }
             else
                 rayOrigin.xz *= rotate(.1*6.2831);
 
-            vec3 rayDirection = calcRayDirection(uv, rayOrigin, vec3(0,1,0), 1.);
+            vec3 rayDirection = calcRayDirection(uv, rayOrigin, lookAt, 1.);
 
             vec2 dist = rayMarch(rayOrigin, rayDirection);
 
@@ -299,7 +330,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
                 colour = getColor(int(dist.y), point);
                 vec3 result = vec3(0);
                 if (GLOBAL_ILLUM == 1)
-                    calcDirLight(dirLight, normal, rayDirection, colour);
+                    result = calcDirLight(dirLight, normal, rayDirection, colour);
                 
                 for(int i = 0; i < POINT_LIGHTS; i++)
                     result += calcPointLight(pointLights[i], normal, point, rayDirection, colour);
